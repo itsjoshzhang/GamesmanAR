@@ -19,10 +19,9 @@ class ArucoNode: SCNNode {
     
     private func createAxes() {
         let length = size / 2
-        let radius = length / 20
         
         func createNode(color: UIColor) -> SCNNode {
-            let axis = SCNCylinder(radius: radius, height: length)
+            let axis = SCNCylinder(radius: length / 20, height: length)
             axis.firstMaterial?.diffuse.contents = color
             let node = SCNNode(geometry: axis)
             self.addChildNode(node)
@@ -43,6 +42,7 @@ class ArucoNode: SCNNode {
     }
     
     public func createText(position: SCNVector3?) {
+        textNode?.removeFromParentNode()
         
         let text = SCNText(string: "(?, ?, ?)", extrusionDepth: 0)
         if let pos = position {

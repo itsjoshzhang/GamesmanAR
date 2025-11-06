@@ -33,8 +33,8 @@ struct ARController: UIViewRepresentable {
     
     class Coordinator: NSObject, ARSessionDelegate {
         var sceneView: ARSCNView!
-        var mutexlock = false
         var seenTimes: [Int: Date] = [:]
+        var mutexlock = false
         
         func session(_ session: ARSession, didUpdate frame: ARFrame) {
             if mutexlock { return }
@@ -71,19 +71,31 @@ struct ARController: UIViewRepresentable {
             }
         }
         
+        // Return node if found
+        func findNode(arucoId: Int) -> ArucoNode? {
+            for node in sceneView.scene.rootNode.childNodes {
+                if let node = node as? ArucoNode, node.id == arucoId {
+                    return node
+                }
+            }
+            return nil
+        }
+        
         func updateNodes(allTransforms: [SKWorldTransform], cameraMatrix: SCNMatrix4) {
-            
             for t in allTransforms {
                 let arucoId = Int(t.arucoId)
                 let worldTransform = SCNMatrix4Mult(t.transform, cameraMatrix)
+                let position = findPosition(arucoId: arucoId, allTransforms: allTransforms)
                 
                 // Update or create new nodes
                 if let node = findNode(arucoId: arucoId) {
                     node.setWorldTransform(worldTransform)
+                    node.createText(position: position)
                 } else {
                     let node = ArucoNode(arucoId: arucoId)
                     sceneView.scene.rootNode.addChildNode(node)
                     node.setWorldTransform(worldTransform)
+                    node.createText(position: position)
                 }
                 seenTimes[arucoId] = Date()
             }
@@ -97,14 +109,35 @@ struct ARController: UIViewRepresentable {
             }
         }
         
-        // Return node if exists
-        func findNode(arucoId: Int) -> ArucoNode? {
-            for node in sceneView.scene.rootNode.childNodes {
-                if let node = node as? ArucoNode, node.id == arucoId {
-                    return node
-                }
+        func findPosition(arucoId: Int, allTransforms: [SKWorldTransform]) -> SCNVector3? {
+            
+            if let fixedAbs = Constants.FixedMarkerDict[arucoId] {
+                return SCNVector3(fixedAbs.x, fixedAbs.y, fixedAbs.z)
             }
-            return nil
+            
+            // Get current marker transform
+            guard let pieceT = allTransforms.first(where: { Int($0.arucoId) == arucoId }) else {
+                return nil
+            }
+            let piecePos = SCNVector3(pieceT.transform.m41, pieceT.transform.m42, pieceT.transform.m43)
+            
+            // Find all visible fixed markers
+            let fixedT = allTransforms.filter { Constants.FixedMarkerDict[Int($0.arucoId)] != nil }
+            guard !fixedT.isEmpty else { return nil }
+            
+            // Calculate relative position in cm
+            var sumX: Float = 0, sumY: Float = 0, sumZ: Float = 0
+            for t in fixedT {
+                let fixedPos = SCNVector3(t.transform.m41, t.transform.m42, t.transform.m43)
+                let fixedAbs = Constants.FixedMarkerDict[Int(t.arucoId)]!
+                
+                sumX += (piecePos.x - fixedPos.x) * 100 + Float(fixedAbs.x)
+                sumY += (piecePos.y - fixedPos.y) * 100 + Float(fixedAbs.y)
+                sumZ += (piecePos.z - fixedPos.z) * 100 + Float(fixedAbs.z)
+            }
+            
+            let count = Float(fixedT.count)
+            return SCNVector3(sumX / count, sumY / count, sumZ / count)
         }
     }
 }
