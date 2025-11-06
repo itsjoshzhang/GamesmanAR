@@ -34,6 +34,7 @@ struct ARController: UIViewRepresentable {
     class Coordinator: NSObject, ARSessionDelegate {
         var sceneView: ARSCNView!
         var mutexlock = false
+        var seenTimes: [Int: Date] = [:]
         
         func session(_ session: ARSession, didUpdate frame: ARFrame) {
             if mutexlock { return }
@@ -60,14 +61,24 @@ struct ARController: UIViewRepresentable {
         
         func updateNodes(transforms: [SKWorldTransform], cameraMatx: SCNMatrix4) {
             for t in transforms {
+                let arucoId = Int(t.arucoId)
+                seenTimes[arucoId] = Date()
+                
                 let worldTransform = SCNMatrix4Mult(t.transform, cameraMatx)
                 
-                if let node = findNode(arucoId: Int(t.arucoId)) {
+                if let node = findNode(arucoId: arucoId) {
                     node.setWorldTransform(worldTransform)
                 } else {
-                    let node = ArucoNode(arucoId: Int(t.arucoId))
+                    let node = ArucoNode(arucoId: arucoId)
                     sceneView.scene.rootNode.addChildNode(node)
                     node.setWorldTransform(worldTransform)
+                }
+            }
+            
+            for (id, lastSeen) in seenTimes {
+                if Date().timeIntervalSince(lastSeen) > 1.0 {
+                    findNode(arucoId: id)?.removeFromParentNode()
+                    seenTimes.removeValue(forKey: id)
                 }
             }
         }
