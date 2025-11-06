@@ -40,32 +40,44 @@ struct ARController: UIViewRepresentable {
             if mutexlock { return }
             mutexlock = true
             
-            let transforms = ArucoCV.estimatePose(
+            // Detect board markers
+            let boardTransforms = ArucoCV.estimatePose(
                 frame.capturedImage,
                 withIntrinsics: frame.camera.intrinsics,
                 andMarkerSize: Constants.BoardMarkerSize
             ) as! [SKWorldTransform]
             
-            if transforms.isEmpty {
+            // Detect piece markers
+            let pieceTransforms = ArucoCV.estimatePose(
+                frame.capturedImage,
+                withIntrinsics: frame.camera.intrinsics,
+                andMarkerSize: Constants.PieceMarkerSize
+            ) as! [SKWorldTransform]
+            
+            // Merge all transforms
+            let keys = Constants.FixedMarkerDict.keys
+            let allTransforms = (boardTransforms.filter { keys.contains(Int($0.arucoId)) } +
+                                 pieceTransforms.filter {!keys.contains(Int($0.arucoId)) } )
+            if allTransforms.isEmpty {
                 mutexlock = false
                 return
             }
             
-            let cameraMatx = SCNMatrix4(frame.camera.transform)
-            
+            // Update all node poses
+            let cameraMatrix = SCNMatrix4(frame.camera.transform)
             DispatchQueue.main.async {
-                self.updateNodes(transforms: transforms, cameraMatx: cameraMatx)
+                self.updateNodes(allTransforms: allTransforms, cameraMatrix: cameraMatrix)
                 self.mutexlock = false
             }
         }
         
-        func updateNodes(transforms: [SKWorldTransform], cameraMatx: SCNMatrix4) {
-            for t in transforms {
+        func updateNodes(allTransforms: [SKWorldTransform], cameraMatrix: SCNMatrix4) {
+            
+            for t in allTransforms {
                 let arucoId = Int(t.arucoId)
-                seenTimes[arucoId] = Date()
+                let worldTransform = SCNMatrix4Mult(t.transform, cameraMatrix)
                 
-                let worldTransform = SCNMatrix4Mult(t.transform, cameraMatx)
-                
+                // Update or create new nodes
                 if let node = findNode(arucoId: arucoId) {
                     node.setWorldTransform(worldTransform)
                 } else {
@@ -73,8 +85,10 @@ struct ARController: UIViewRepresentable {
                     sceneView.scene.rootNode.addChildNode(node)
                     node.setWorldTransform(worldTransform)
                 }
+                seenTimes[arucoId] = Date()
             }
             
+            // Remove unseen nodes after 1sec
             for (id, lastSeen) in seenTimes {
                 if Date().timeIntervalSince(lastSeen) > 1.0 {
                     findNode(arucoId: id)?.removeFromParentNode()
@@ -83,6 +97,7 @@ struct ARController: UIViewRepresentable {
             }
         }
         
+        // Return node if exists
         func findNode(arucoId: Int) -> ArucoNode? {
             for node in sceneView.scene.rootNode.childNodes {
                 if let node = node as? ArucoNode, node.id == arucoId {
