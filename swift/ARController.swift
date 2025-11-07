@@ -111,32 +111,32 @@ struct ARController: UIViewRepresentable {
         
         func findPosition(arucoId: Int, allTransforms: [SKWorldTransform]) -> SCNVector3? {
             
+            // If fixed marker: return absolute pos
             if let fixedAbs = Constants.FixedMarkerDict[arucoId] {
                 return SCNVector3(fixedAbs.x, fixedAbs.y, fixedAbs.z)
             }
+            // If no fixed markers seen: return nil
+            let fixedArr = allTransforms.filter { Constants.FixedMarkerDict.keys.contains(Int($0.arucoId))}
+            if fixedArr.isEmpty { return nil }
             
-            // Get current marker transform
+            // Get piece marker's transform and pos
             guard let pieceT = allTransforms.first(where: { Int($0.arucoId) == arucoId }) else {
                 return nil
             }
             let piecePos = SCNVector3(pieceT.transform.m41, pieceT.transform.m42, pieceT.transform.m43)
             
-            // Find all visible fixed markers
-            let fixedT = allTransforms.filter { Constants.FixedMarkerDict[Int($0.arucoId)] != nil }
-            guard !fixedT.isEmpty else { return nil }
-            
-            // Calculate relative position in cm
+            // Get pos relative to all fixed markers
             var sumX: Float = 0, sumY: Float = 0, sumZ: Float = 0
-            for t in fixedT {
-                let fixedPos = SCNVector3(t.transform.m41, t.transform.m42, t.transform.m43)
-                let fixedAbs = Constants.FixedMarkerDict[Int(t.arucoId)]!
+            for fixedT in fixedArr {
+                let boardPos = SCNVector3(fixedT.transform.m41, fixedT.transform.m42, fixedT.transform.m43)
+                let fixedAbs = Constants.FixedMarkerDict[Int(fixedT.arucoId)]!
                 
-                sumX += (piecePos.x - fixedPos.x) * 100 + Float(fixedAbs.x)
-                sumY += (piecePos.y - fixedPos.y) * 100 + Float(fixedAbs.y)
-                sumZ += (piecePos.z - fixedPos.z) * 100 + Float(fixedAbs.z)
+                sumX += (piecePos.x - boardPos.x) + Float(fixedAbs.x)
+                sumY += (piecePos.y - boardPos.y) + Float(fixedAbs.y)
+                sumZ += (piecePos.z - boardPos.z) + Float(fixedAbs.z)
             }
             
-            let count = Float(fixedT.count)
+            let count = Float(fixedArr.count)
             return SCNVector3(sumX / count, sumY / count, sumZ / count)
         }
     }

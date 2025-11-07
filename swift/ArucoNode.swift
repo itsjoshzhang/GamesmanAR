@@ -33,7 +33,6 @@ class ArucoNode: SCNNode {
         xNode.position = SCNVector3(length / 2, 0, 0)
         
         let yNode = createNode(color: UIColor.green)
-        yNode.eulerAngles = SCNVector3(0, 0, 0)
         yNode.position = SCNVector3(0, length / 2, 0)
         
         let zNode = createNode(color: UIColor.blue)
@@ -46,7 +45,8 @@ class ArucoNode: SCNNode {
         
         let text = SCNText(string: "(?, ?, ?)", extrusionDepth: 0)
         if let pos = position {
-            text.string = String(format: "(%.1f, %.1f, %.1f)", pos.x, pos.y, pos.z)
+            text.string = String(format: "(%.1f, %.1f, %.1f)",
+                                 pos.x * 100, pos.y * 100, pos.z * 100)
         }
         text.font = UIFont.boldSystemFont(ofSize: 10)
         text.firstMaterial?.diffuse.contents = UIColor.magenta
