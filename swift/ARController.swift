@@ -4,20 +4,22 @@ import SceneKit
 
 struct ARController: UIViewRepresentable {
     
+    // MARK: - View setup
+    
     func makeUIView(context: Context) -> ARSCNView {
         let view = ARSCNView()
         view.showsStatistics = true
         view.autoenablesDefaultLighting = true
-        context.coordinator.sceneView = view
         view.session.delegate = context.coordinator
+        context.coordinator.sceneView = view
         return view
     }
     
     func updateUIView(_ view: ARSCNView, context: Context) {
         if view.session.configuration == nil {
             let config = ARWorldTrackingConfiguration()
-            config.planeDetection = .horizontal
             config.isLightEstimationEnabled = true
+            config.planeDetection = .horizontal
             config.worldAlignment = .gravity
             view.session.run(config)
         }
@@ -31,47 +33,43 @@ struct ARController: UIViewRepresentable {
         Coordinator()
     }
     
+    // MARK: - Main logic
+    
     class Coordinator: NSObject, ARSessionDelegate {
         var sceneView: ARSCNView!
         var seenTimes: [Int: Date] = [:]
-        var mutexlock = false
+        var mutexLock = false
         
+        // Runs every frame. Gets board+piece transforms,updates nodes
         func session(_ session: ARSession, didUpdate frame: ARFrame) {
-            if mutexlock { return }
-            mutexlock = true
+            if mutexLock { return }
+            mutexLock = true
             
-            // Detect board markers
-            let boardTransforms = ArucoCV.estimatePose(
-                frame.capturedImage,
-                withIntrinsics: frame.camera.intrinsics,
-                andMarkerSize: Constants.BoardMarkerSize
-            ) as! [SKWorldTransform]
+            // Returns transforms for all markers based on markerSize
+            func detect(_ markerSize: Double) -> [SKWorldTransform] {
+                return ArucoCV.estimatePose(frame.capturedImage,
+                    withIntrinsics: frame.camera.intrinsics,
+                    andMarkerSize: markerSize
+                ) as! [SKWorldTransform]
+            }
             
-            // Detect piece markers
-            let pieceTransforms = ArucoCV.estimatePose(
-                frame.capturedImage,
-                withIntrinsics: frame.camera.intrinsics,
-                andMarkerSize: Constants.PieceMarkerSize
-            ) as! [SKWorldTransform]
-            
-            // Merge all transforms
-            let keys = Constants.FixedMarkerDict.keys
-            let allTransforms = (boardTransforms.filter { keys.contains(Int($0.arucoId)) } +
-                                 pieceTransforms.filter {!keys.contains(Int($0.arucoId)) } )
-            if allTransforms.isEmpty {
-                mutexlock = false
+            // Filter all transforms into board and piece
+            let boardIDs = Constants.FixedMarkerDict.keys
+            let boardTransforms = detect(Constants.BoardMarkerSize).filter { boardIDs.contains(Int($0.arucoId)) }
+            let pieceTransforms = detect(Constants.PieceMarkerSize).filter {!boardIDs.contains(Int($0.arucoId)) }
+
+            if (boardTransforms + pieceTransforms).isEmpty {
+                mutexLock = false
                 return
             }
             
-            // Update all node poses
-            let cameraMatrix = SCNMatrix4(frame.camera.transform)
             DispatchQueue.main.async {
-                self.updateNodes(allTransforms: allTransforms, cameraMatrix: cameraMatrix)
-                self.mutexlock = false
+                self.updateNodes(boardTransforms, pieceTransforms, SCNMatrix4(frame.camera.transform))
+                self.mutexLock = false
             }
         }
         
-        // Return node if found
+        // Return node if it exists
         func findNode(arucoId: Int) -> ArucoNode? {
             for node in sceneView.scene.rootNode.childNodes {
                 if let node = node as? ArucoNode, node.id == arucoId {
@@ -81,21 +79,23 @@ struct ARController: UIViewRepresentable {
             return nil
         }
         
-        func updateNodes(allTransforms: [SKWorldTransform], cameraMatrix: SCNMatrix4) {
-            for t in allTransforms {
+        // Send world (rendered) and label (relative) positions
+        func updateNodes(_ boardTransforms: [SKWorldTransform], _ pieceTransforms: [SKWorldTransform], _ cameraTransform: SCNMatrix4) {
+            
+            for t in (boardTransforms + pieceTransforms) {
                 let arucoId = Int(t.arucoId)
-                let worldTransform = SCNMatrix4Mult(t.transform, cameraMatrix)
-                let position = findPosition(arucoId: arucoId, allTransforms: allTransforms)
+                let worldPosition = SCNMatrix4Mult(t.transform, cameraTransform)
+                let labelPosition = findPosition(arucoId, boardTransforms, pieceTransforms)
                 
-                // Update or create new nodes
+                // Update node if it exists, else make new
                 if let node = findNode(arucoId: arucoId) {
-                    node.setWorldTransform(worldTransform)
-                    node.createText(position: position)
+                    node.setWorldTransform(worldPosition)
+                    node.createText(label: labelPosition)
                 } else {
                     let node = ArucoNode(arucoId: arucoId)
                     sceneView.scene.rootNode.addChildNode(node)
-                    node.setWorldTransform(worldTransform)
-                    node.createText(position: position)
+                    node.setWorldTransform(worldPosition)
+                    node.createText(label: labelPosition)
                 }
                 seenTimes[arucoId] = Date()
             }
@@ -109,35 +109,35 @@ struct ARController: UIViewRepresentable {
             }
         }
         
-        func findPosition(arucoId: Int, allTransforms: [SKWorldTransform]) -> SCNVector3? {
+        func findPosition(_ arucoId: Int, _ boardTransforms: [SKWorldTransform], _ pieceTransforms: [SKWorldTransform]) -> SCNVector3? {
             
-            // If fixed marker: return absolute pos
-            if let fixedAbs = Constants.FixedMarkerDict[arucoId] {
-                return SCNVector3(fixedAbs.x, fixedAbs.y, fixedAbs.z)
+            // If board marker -> constant pos. If no board -> nil
+            if let boardPos = Constants.FixedMarkerDict[arucoId] {
+                return SCNVector3(boardPos.x, boardPos.y, boardPos.z)
             }
-            // If no fixed markers seen: return nil
-            let fixedArr = allTransforms.filter { Constants.FixedMarkerDict.keys.contains(Int($0.arucoId))}
-            if fixedArr.isEmpty { return nil }
+            if boardTransforms.isEmpty { return nil }
             
-            // Get piece marker's transform and pos
-            guard let pieceT = allTransforms.first(where: { Int($0.arucoId) == arucoId }) else {
-                return nil
-            }
-            let piecePos = SCNVector3(pieceT.transform.m41, pieceT.transform.m42, pieceT.transform.m43)
+            // Verify piece marker
+            guard let pieceTfm = pieceTransforms.first(where: { Int($0.arucoId) == arucoId })
+            else { return nil }
             
-            // Get pos relative to all fixed markers
-            var sumX: Float = 0, sumY: Float = 0, sumZ: Float = 0
-            for fixedT in fixedArr {
-                let boardPos = SCNVector3(fixedT.transform.m41, fixedT.transform.m42, fixedT.transform.m43)
-                let fixedAbs = Constants.FixedMarkerDict[Int(fixedT.arucoId)]!
+            // Average pos across all board markers
+            var sums = SCNVector3Zero
+            for boardTfm in boardTransforms {
+                let boardPos = Constants.FixedMarkerDict[Int(boardTfm.arucoId)]!
                 
-                sumX += (piecePos.x - boardPos.x) + Float(fixedAbs.x)
-                sumY += (piecePos.y - boardPos.y) + Float(fixedAbs.y)
-                sumZ += (piecePos.z - boardPos.z) + Float(fixedAbs.z)
+                // Find piece pos in board space (piece * board^-1)
+                let boardInv = SCNMatrix4Invert(boardTfm.transform)
+                let P2Bspace = SCNMatrix4Mult(pieceTfm.transform, boardInv)
+                let piecePos = SCNVector3(P2Bspace.m41, P2Bspace.m42, P2Bspace.m43)
+                
+                sums.x += piecePos.x + Float(boardPos.x)
+                sums.y += piecePos.y + Float(boardPos.y)
+                sums.z += piecePos.z + Float(boardPos.z)
             }
             
-            let count = Float(fixedArr.count)
-            return SCNVector3(sumX / count, sumY / count, sumZ / count)
+            let count = Float(boardTransforms.count)
+            return SCNVector3(sums.x / count, sums.y / count, sums.z / count)
         }
     }
 }

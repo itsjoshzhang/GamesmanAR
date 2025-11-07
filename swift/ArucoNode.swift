@@ -20,36 +20,36 @@ class ArucoNode: SCNNode {
     private func createAxes() {
         let length = size / 2
         
-        func createNode(color: UIColor) -> SCNNode {
-            let axis = SCNCylinder(radius: length / 20, height: length)
-            axis.firstMaterial?.diffuse.contents = color
-            let node = SCNNode(geometry: axis)
-            self.addChildNode(node)
-            return node
+        func createAxis(color: UIColor) -> SCNNode {
+            let shape = SCNCylinder(radius: length / 20, height: length)
+            shape.firstMaterial?.diffuse.contents = color
+            let axis = SCNNode(geometry: shape)
+            self.addChildNode(axis)
+            return axis
         }
         
-        let xNode = createNode(color: UIColor.red)
-        xNode.eulerAngles = SCNVector3(0, 0, -Float.pi / 2)
-        xNode.position = SCNVector3(length / 2, 0, 0)
+        let xAxis = createAxis(color: UIColor.red)
+        xAxis.eulerAngles = SCNVector3(0, 0, -Float.pi / 2)
+        xAxis.position = SCNVector3(length / 2, 0, 0)
         
-        let yNode = createNode(color: UIColor.green)
-        yNode.position = SCNVector3(0, length / 2, 0)
+        let yAxis = createAxis(color: UIColor.green)
+        yAxis.position = SCNVector3(0, length / 2, 0)
         
-        let zNode = createNode(color: UIColor.blue)
-        zNode.eulerAngles = SCNVector3(Float.pi / 2, 0, 0)
-        zNode.position = SCNVector3(0, 0, length / 2)
+        let zAxis = createAxis(color: UIColor.blue)
+        zAxis.eulerAngles = SCNVector3(Float.pi / 2, 0, 0)
+        zAxis.position = SCNVector3(0, 0, length / 2)
     }
     
-    public func createText(position: SCNVector3?) {
+    public func createText(label: SCNVector3?) {
+        guard let label = label else { return }
         textNode?.removeFromParentNode()
         
-        let text = SCNText(string: "(?, ?, ?)", extrusionDepth: 0)
-        if let pos = position {
-            text.string = String(format: "(%.1f, %.1f, %.1f)",
-                                 pos.x * 100, pos.y * 100, pos.z * 100)
-        }
-        text.font = UIFont.boldSystemFont(ofSize: 10)
+        let m_to_cm = String(format: "(%d, %d, %d)",
+            Int(label.x * 100), Int(label.y * 100), Int(label.z * 100))
+        
+        let text = SCNText(string: m_to_cm, extrusionDepth: 0)
         text.firstMaterial?.diffuse.contents = UIColor.magenta
+        text.font = UIFont.boldSystemFont(ofSize: 10)
         
         textNode = SCNNode(geometry: text)
         textNode?.scale = SCNVector3(0.001, 0.001, 0.001)
