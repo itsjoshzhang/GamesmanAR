@@ -20,7 +20,7 @@ class AROverlay {
         let (minX, maxX) = (xs.min()!, xs.max()!)
         let (minY, maxY) = (ys.min()!, ys.max()!)
         
-        // Create grid of images
+        // Calculate bounds from stride
         let xStart = Int((minX / stride).rounded(.down))
         let xFinal = Int((maxX / stride).rounded(.up))
         let yStart = Int((minY / stride).rounded(.down))
@@ -46,7 +46,7 @@ class AROverlay {
                     // Board-to-world transform
                     let worldTfm = SCNMatrix4Mult(boardTfm.transform, cameraTransform)
                     
-                    // Grid point in board space relative to this marker
+                    // Grid point in board space
                     let relative = SCNVector3(Float(x - boardPos.x), Float(y - boardPos.y), 0)
                     let worldPos = transformPoint(p: relative, m: worldTfm)
                     
@@ -54,25 +54,28 @@ class AROverlay {
                     sumPos.y += worldPos.y
                     sumPos.z += worldPos.z
                     
-                    // Average rotation
+                    // Average rotation from quat
                     sumRot.vector += simd_quatf(m: worldTfm).vector
                 }
                 
                 let count = Float(boardTransforms.count)
                 let avgPos = SCNVector3(sumPos.x / count, sumPos.y / count, sumPos.z / count)
-                let avgRot = simd_normalize(sumRot)
+                
+                // Extract the board plane orientation: remove twist around normal
+                let boardNormal = simd_normalize(sumRot).act(simd_float3(0, 0, 1))
+                
+                // Create rotation that keeps dots planar with a fixed up direction
+                let fixRot = simd_quatf(from: simd_float3(0, 0, 1), to: boardNormal)
                 
                 // Update current node if it exists
                 if let node = gridNodes[key] {
                     let move = SCNAction.move(to: avgPos, duration: 0.1)
-                    let rotate = SCNAction.rotateTo(
-                        x: CGFloat(avgRot.angle) * CGFloat(avgRot.axis.x),
-                        y: CGFloat(avgRot.angle) * CGFloat(avgRot.axis.y),
-                        z: CGFloat(avgRot.angle) * CGFloat(avgRot.axis.z),
-                        duration: 0.1)
-                    node.runAction(SCNAction.group([move, rotate]))
+                    node.runAction(move)
+                    node.simdOrientation = fixRot
+                    
+                // Otherwise make new node and keys
                 } else {
-                    let node = createDot(pos: avgPos, rot: avgRot)
+                    let node = createDot(pos: avgPos, rot: fixRot)
                     parentNode.addChildNode(node)
                     gridNodes[key] = node
                 }
