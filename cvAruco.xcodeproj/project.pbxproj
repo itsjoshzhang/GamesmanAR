@@ -32,6 +32,7 @@
 			membershipExceptions = (
 				AppDelegate.swift,
 				ARController.swift,
+				AROverlay.swift,
 				ArucoNode.swift,
 			);
 			target = CA1A9D8C2249D1B300EDE121 /* cvAruco */;

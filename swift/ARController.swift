@@ -38,8 +38,11 @@ struct ARController: UIViewRepresentable {
     class Coordinator: NSObject, ARSessionDelegate {
         var mutexLock = false
         var sceneView: ARSCNView!
+        
+        // Map from arucoId: (node, time)
         var seenNodes: [Int: (node: ArucoNode, time: Date)] = [:]
         let busyQueue = DispatchQueue(label: "busyQueue", qos: .userInitiated)
+        lazy var arOverlay = AROverlay(parentNode: sceneView.scene.rootNode)
         
         // Runs every frame. Finds board, piece, and camera transforms
         func session(_ session: ARSession, didUpdate frame: ARFrame) {
@@ -77,6 +80,7 @@ struct ARController: UIViewRepresentable {
                 }
                 DispatchQueue.main.async {
                     self.updateNodes(boardTransforms, pieceTransforms, cameraTransform)
+                    self.arOverlay.update(boardTransforms, cameraTransform)
                     self.mutexLock = false
                 }
             }
@@ -142,6 +146,7 @@ struct ARController: UIViewRepresentable {
                 sums.y += piecePos.y + Float(boardPos.y)
                 sums.z += piecePos.z + Float(boardPos.z)
             }
+            // Avg across all board markers
             let count = Float(boardTransforms.count)
             return SCNVector3(sums.x / count, sums.y / count, sums.z / count)
         }
