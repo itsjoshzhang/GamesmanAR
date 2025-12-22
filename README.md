@@ -1,7 +1,5 @@
 # GamesmanAR
 
-> Real-time ArUco marker tracking for augmented reality board games
-
 GamesmanAR brings physical board games into the augmented reality era. Point your iPhone at a game board to see coordinate frames, position tracking, and interactive overlays rendered directly on the physical playing surface.
 
 ## Overview
@@ -102,7 +100,7 @@ For each piece marker:
 
 ## Configuration
 
-Edit `Constants.swift` to customize:
+Edit `AppDelegate.swift` to customize:
 
 ```swift
 // Marker physical sizes (meters)
@@ -129,13 +127,12 @@ static let FixedMarkerDict = [
 ## Project Structure
 
 ```
-GamesmanAR/
-├── cvARuco.swift          # App entry point and SwiftUI views
+GamesmanAR/swift
+├── AppDelegate.swift      # App entry point and SwiftUI views
 ├── ARController.swift     # ARKit integration and session management
 ├── ArucoNode.swift        # Marker visualization nodes
 ├── AROverlay.swift        # Grid overlay system
-├── Constants.swift        # Configuration parameters
-└── ArucoCV/              # OpenCV bridge (not included)
+└── ArucoCV/               # OpenCV bridge (not included)
 ```
 
 ## Roadmap
